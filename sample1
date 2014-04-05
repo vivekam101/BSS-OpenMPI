@@ -1,0 +1,80 @@
+#include <mpi.h>
+#include <time.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+int main(int argc, char** argv) {
+  // Initialize the MPI environment
+  MPI_Init(NULL, NULL);
+  // Find out rank, size
+  int world_rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+  int world_size;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+  // We are assuming at least 2 processes for this task
+  if (world_size < 2) {
+    fprintf(stderr, "World size must be greater than 2 for %s\n", argv[0]);
+    MPI_Abort(MPI_COMM_WORLD, 1); 
+  }
+/* [0]=current process
+   [3]=send/recieve bit
+   [4]=from/to process
+
+   [2]-process vector clock
+  */
+
+  int vector[6]={0};
+  int i=0;
+  int vector1[6]={0};
+
+/* initiate sending*/
+  if(world_rank == 1){
+	  vector[0]=1;
+	  vector[1]++;
+	  vector[world_size]=0;
+	  vector[world_size+1]=2;
+	  MPI_Ssend(&vector, world_size+2, MPI_INT, 0, 0, MPI_COMM_WORLD);
+	  MPI_Ssend(&vector, world_size+2, MPI_INT, 2, 0, MPI_COMM_WORLD);
+  }
+  
+  while(vector[world_size-1]<5){
+/* Print Process */
+	  if(world_rank == 0){
+		  char a[7];
+		  MPI_Recv(&vector, world_size+2, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		  if(vector[world_size] == 0)
+			  strncpy(a, "send", 7);
+		  else	
+			  strncpy(a, "recieve", 7);
+		  printf("\nProcess %d: %s (To/From) %d \n Vector Clock(%d): ",vector[0],a,vector[world_size+1],vector[0]);	    
+		  for(i=1;i<world_size;i++)
+		    printf("%d ",vector[i]);
+	  }
+	  else {
+		  vector[0]=world_rank;
+		  vector[world_size]=1;
+		  MPI_Recv(&vector1, world_size+2, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);		
+		  vector[world_size+1]=vector1[0];
+		  for(i=1;i<=world_size;i++){
+			  if(vector[i]<vector1[i] && i!=world_rank)
+				  vector[i]=vector1[i];
+		  }
+		  vector[world_rank]++;
+   	    	  MPI_Ssend(&vector, world_size+2, MPI_INT, 0, 0, MPI_COMM_WORLD);
+//		  MPI_Barrier (MPI_COMM_WORLD); 
+		  vector[0]=world_rank;
+	          vector[world_rank]++;
+	          vector[world_size]=0;
+		  do{
+			  vector[world_size+1]=((rand())%(world_size-1))+1;
+		  }while(vector[world_size+1]==world_rank);
+	  	  MPI_Ssend(&vector, world_size+2, MPI_INT, 0, 0, MPI_COMM_WORLD);
+	          MPI_Ssend(&vector, world_size+2, MPI_INT, vector[world_size+1], 0, MPI_COMM_WORLD);
+  //                MPI_Barrier (MPI_COMM_WORLD);
+	  }
+  }
+  MPI_Finalize();
+}
