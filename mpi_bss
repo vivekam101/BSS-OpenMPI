@@ -1,0 +1,123 @@
+#include <mpi.h>
+#include <time.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#define PROCESS 4
+
+int main(int argc, char** argv) {
+	struct node {
+		int vector[PROCESS+3];
+		char processor_name[MPI_MAX_PROCESSOR_NAME];
+		int name_len;
+		char buffer[30];
+                struct timeval tv;
+                time_t curtime;
+	};
+ 	struct node p,q;
+	// Initialize the MPI environment
+	MPI_Init(NULL, NULL);
+       // Find out rank, size
+	int world_rank;
+        MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+        int world_size;
+        MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+        // We are assuming at least 2 processes for this task
+  	if (world_size < 2) {
+		fprintf(stderr, "World size must be greater than 2 for %s\n", argv[0]);
+		MPI_Abort(MPI_COMM_WORLD, 1); 
+	}
+/* [0]=current process
+   [3]=send/recieve bit
+   [4]=from/to process
+
+   [2]-process vector clock
+  */
+
+  int i=0;
+  FILE *fp;
+  for(i=1;i<world_size;i++){
+	  p.vector[i]=0;
+	  q.vector[i]=0;
+  }
+  if(world_rank == 1 ){
+  	MPI_Get_processor_name(p.processor_name, &p.name_len);
+ 	p.vector[0]=world_rank;		                        
+ 	p.vector[world_size]=0;
+  	p.vector[world_rank]++;
+  	gettimeofday(&p.tv, NULL);
+  	p.curtime=p.tv.tv_sec;
+  	MPI_Ssend(&p, sizeof(p), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
+ 	 for(i=1;i<world_size;i++){
+		if(i!=world_rank){
+			MPI_Send(&p, sizeof(p), MPI_BYTE, i, 0, MPI_COMM_WORLD);
+			}
+		}
+ 	 
+}
+  while(p.vector[world_size-1]<5){
+/* Print Process */
+       if(world_rank == 0){
+		  fflush(stdout);
+		  char a[7];
+		  MPI_Recv(&p, sizeof(p), MPI_BYTE, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		  strftime(p.buffer,30,"%m-%d-%Y  %T.",localtime(&p.curtime));
+		  if(p.vector[world_size] == 0){
+			  strncpy(a, "send", 7);
+			  printf("\nHostname:%s \nSystem Time:%s%ld\nProcess %d: Broadcasted \nVector Clock(%d): ",p.processor_name,p.buffer,p.tv.tv_usec,p.vector[0],p.vector[0]);
+		  }
+		  else if(p.vector[world_size] == 1){
+			  strncpy(a, "recieve", 7);
+		  printf("\nHostname:%s \nSystem Time:%s%ld\nProcess %d: %s (To/From) %d \nVector Clock(%d): ",p.processor_name,p.buffer,p.tv.tv_usec,p.vector[0],a,p.vector[world_size+1],p.vector[0]);	    
+		  }
+		  else{
+		  	strncpy(a, "Incomin", 7);
+		  	printf("\n%s TimeStamp Vector From %d \nVector Clock(%d): ",a,p.vector[0],p.vector[0]);	    
+		  }	
+		  
+		  for(i=1;i<world_size;i++)
+		    printf("%d ",p.vector[i]);
+		  printf("\n");
+	  }
+	 else {
+		  MPI_Get_processor_name(p.processor_name, &p.name_len);
+		while(1){
+			MPI_Recv(&q, sizeof(q), MPI_BYTE, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);	
+				int temp=q.vector[0];	
+				if(q.vector[temp]=p.vector[temp]+1){
+					for(i=1;i<world_size;i++){
+						if(p.vector[i]<q.vector[i] && i!=temp)
+								break;
+						}
+					if(i==world_size){
+			                        q.vector[world_size]=2;
+		   			        MPI_Ssend(&q, sizeof(q), MPI_BYTE, 0, 0, MPI_COMM_WORLD);					
+						p.vector[temp]=q.vector[temp];
+						p.vector[world_size]=1;
+						p.vector[0]=world_rank;
+						p.vector[world_size+1]=q.vector[0];
+						gettimeofday(&p.tv, NULL);
+						p.curtime=p.tv.tv_sec;
+						MPI_Ssend(&p, sizeof(p), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
+						break;
+					}
+				}
+			}						
+		  	  	p.vector[0]=world_rank;
+		                p.vector[world_size]=0;
+			        p.vector[world_rank]++;
+		  		gettimeofday(&p.tv, NULL);
+		  		p.curtime=p.tv.tv_sec;
+		  		MPI_Send(&p, sizeof(p), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
+			        for(i=1;i<world_size;i++){
+					if(i!=world_rank)
+						MPI_Send(&p, sizeof(p), MPI_BYTE, i, 0, MPI_COMM_WORLD);
+						usleep(100000);
+					}
+				
+		
+	}
+  }				
+  MPI_Finalize();
+}
+ 
